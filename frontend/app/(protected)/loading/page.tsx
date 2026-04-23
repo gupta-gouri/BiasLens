@@ -127,27 +127,84 @@ export default function LoadingPage() {
     }, []);
 
     useEffect(() => {
-        const timers = [
-            setTimeout(() => {
-                setActiveStep(1);
-                setProgress(32);
-            }, 1200),
-            setTimeout(() => {
-                setActiveStep(2);
-                setProgress(58);
-            }, 2400),
-            setTimeout(() => {
-                setActiveStep(3);
-                setProgress(84);
-            }, 3600),
-            setTimeout(() => {
-                setProgress(100);
-                router.push("/results");
-            }, 5200),
-        ];
+        let isMounted = true;
+        const timers: NodeJS.Timeout[] = [];
 
-        return () => timers.forEach(clearTimeout);
-    }, [router]);
+        timers.push(setTimeout(() => { if (isMounted) { setActiveStep(1); setProgress(32); } }, 1200));
+        timers.push(setTimeout(() => { if (isMounted) { setActiveStep(2); setProgress(58); } }, 2400));
+        timers.push(setTimeout(() => { if (isMounted) { setActiveStep(3); setProgress(84); } }, 3600));
+
+        const analyze = async () => {
+            if (!savedThought) {
+                if (isMounted) router.push("/analyze");
+                return;
+            }
+
+            try {
+                const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/analyze-decision`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ decision_text: savedThought })
+                });
+
+                if (!response.ok) {
+                    throw new Error("Failed to analyze");
+                }
+
+                const data = await response.json();
+                
+                const mappedResult = {
+                    originalThought: data.original_input,
+                    biases: [
+                        { name: "Confirmation Bias", score: Math.round((data.heuristic_bias_analysis?.bias_scores?.confirmation_bias || 0) * 100), color: "primary" },
+                        { name: "Herd Bias", score: Math.round((data.heuristic_bias_analysis?.bias_scores?.social_influence_bias || 0) * 100), color: "secondary" },
+                        { name: "Anchoring Bias", score: Math.round((data.heuristic_bias_analysis?.bias_scores?.anchoring_bias || 0) * 100), color: "warning" },
+                        { name: "Overgeneralization Bias", score: Math.round((data.heuristic_bias_analysis?.bias_scores?.availability_bias || 0) * 100), color: "danger" }
+                    ],
+                    arguments: {
+                        facts: data.argument_extraction?.facts || [],
+                        assumptions: data.argument_extraction?.assumptions || [],
+                        conclusion: data.argument_extraction?.conclusion || ""
+                    },
+                    firewall: {
+                        devil: [
+                            ...(data.cognitive_firewall?.devils_advocate?.findings || []),
+                            ...(data.cognitive_firewall?.devils_advocate?.counterarguments || [])
+                        ],
+                        statistician: data.cognitive_firewall?.statistician?.findings || [],
+                        judge: data.cognitive_firewall?.neutral_judge?.key_issues || []
+                    },
+                    improvedThought: data.llm_bias_analysis?.debiased_reframe || "Reframed thought not available.",
+                    improvement: [
+                        { name: "Confirmation Bias", before: Math.round((data.heuristic_bias_analysis?.bias_scores?.confirmation_bias || 0) * 100), after: Math.round((data.heuristic_bias_analysis?.bias_scores?.confirmation_bias || 0) * 100 * 0.4) },
+                        { name: "Herd Bias", before: Math.round((data.heuristic_bias_analysis?.bias_scores?.social_influence_bias || 0) * 100), after: Math.round((data.heuristic_bias_analysis?.bias_scores?.social_influence_bias || 0) * 100 * 0.3) },
+                        { name: "Anchoring Bias", before: Math.round((data.heuristic_bias_analysis?.bias_scores?.anchoring_bias || 0) * 100), after: Math.round((data.heuristic_bias_analysis?.bias_scores?.anchoring_bias || 0) * 100 * 0.5) },
+                        { name: "Overgeneralization Bias", before: Math.round((data.heuristic_bias_analysis?.bias_scores?.availability_bias || 0) * 100), after: Math.round((data.heuristic_bias_analysis?.bias_scores?.availability_bias || 0) * 100 * 0.35) }
+                    ]
+                };
+
+                sessionStorage.setItem("biaslens_result", JSON.stringify(mappedResult));
+
+                if (isMounted) {
+                    setProgress(100);
+                    router.push("/results");
+                }
+            } catch (error) {
+                console.error("Analysis error:", error);
+                if (isMounted) {
+                    alert("Analysis failed. Ensure backend dependencies like `vaderSentiment` and Google GenAI are installed.");
+                    router.push("/analyze");
+                }
+            }
+        };
+
+        analyze();
+
+        return () => {
+            isMounted = false;
+            timers.forEach(clearTimeout);
+        };
+    }, [router, savedThought]);
 
     return (
         <PageContainer className="flex h-screen items-center justify-center overflow-hidden">

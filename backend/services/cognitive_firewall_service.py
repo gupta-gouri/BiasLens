@@ -1,9 +1,8 @@
 def run_devils_advocate_agent(agent_input):
     argument_data = agent_input.get("argument_extraction", {})
-    bias_analysis = agent_input.get("bias_analysis", {})
+    bias_analysis = agent_input.get("heuristic_bias_analysis", {})
 
-    decision_claim = argument_data.get("decision_claim", "")
-    supporting_reasons = argument_data.get("supporting_reasons", [])
+    decision_claim = argument_data.get("conclusion", "")
     assumptions = argument_data.get("assumptions", [])
     facts = argument_data.get("facts", [])
     bias_scores = bias_analysis.get("bias_scores", {})
@@ -14,8 +13,8 @@ def run_devils_advocate_agent(agent_input):
     if assumptions:
         findings.append("The decision depends on assumptions that are not yet verified.")
 
-    if len(supporting_reasons) <= 1:
-        findings.append("The reasoning relies on limited supporting reasons.")
+    if len(facts) + len(assumptions) <= 1:
+        findings.append("The reasoning relies on limited supporting points.")
 
     if not facts:
         findings.append("No concrete facts are presented to support the claim.")
@@ -45,11 +44,10 @@ def run_devils_advocate_agent(agent_input):
 
 def run_statistician_agent(agent_input):
     argument_data = agent_input.get("argument_extraction", {})
-    bias_analysis = agent_input.get("bias_analysis", {})
+    bias_analysis = agent_input.get("heuristic_bias_analysis", {})
 
     facts = argument_data.get("facts", [])
     assumptions = argument_data.get("assumptions", [])
-    supporting_reasons = argument_data.get("supporting_reasons", [])
     bias_scores = bias_analysis.get("bias_scores", {})
 
     findings = []
@@ -60,7 +58,7 @@ def run_statistician_agent(agent_input):
     if assumptions:
         findings.append("Some parts of the reasoning are assumption-driven rather than evidence-driven.")
 
-    if len(supporting_reasons) < 1:
+    if len(facts) + len(assumptions) < 1:
         findings.append("There is not enough supporting justification.")
 
     if bias_scores.get("availability_bias", 0) > 0.4:
@@ -87,7 +85,7 @@ def run_statistician_agent(agent_input):
 
 def run_neutral_judge_agent(agent_input, devils_advocate_output, statistician_output):
     argument_data = agent_input.get("argument_extraction", {})
-    decision_claim = argument_data.get("decision_claim", "")
+    decision_claim = argument_data.get("conclusion", "")
     conclusion = argument_data.get("conclusion", "")
 
     key_issues = []

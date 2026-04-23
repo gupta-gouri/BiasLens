@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
@@ -26,8 +26,24 @@ import {
 import { PageContainer } from "@/components/biaslens/PageContainer";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { Button } from "@/components/ui/Button";
-import { mockResult } from "@/lib/mock-data";
 import ChartCard from "@/components/biaslens/ChartCard";
+
+interface BiasResult {
+    originalThought: string;
+    biases: { name: string; score: number; color: string }[];
+    arguments: {
+        facts: string[];
+        assumptions: string[];
+        conclusion: string;
+    };
+    firewall: {
+        devil: string[];
+        statistician: string[];
+        judge: string[];
+    };
+    improvedThought: string;
+    improvement: { name: string; before: number; after: number }[];
+}
 
 function AmbientOrb({
     className,
@@ -356,23 +372,46 @@ function ConfidenceRing({ value }: { value: number }) {
 export default function ResultsPage() {
     const router = useRouter();
 
+    const [resultData, setResultData] = useState<BiasResult | null>(null);
+    const [isMounted, setIsMounted] = useState(false);
+
+    useEffect(() => {
+        setIsMounted(true);
+        if (typeof window !== "undefined") {
+            const stored = sessionStorage.getItem("biaslens_result");
+            if (stored) {
+                try {
+                    setResultData(JSON.parse(stored));
+                } catch (e) {
+                    console.error("Failed to parse result", e);
+                    router.push("/analyze");
+                }
+            } else {
+                router.push("/analyze");
+            }
+        }
+    }, [router]);
+
     const originalThought = useMemo(() => {
-        if (typeof window === "undefined") return mockResult.originalThought;
-        return sessionStorage.getItem("biaslens_thought") || mockResult.originalThought;
-    }, []);
+        if (!resultData) return "";
+        if (typeof window === "undefined") return resultData.originalThought;
+        return sessionStorage.getItem("biaslens_thought") || resultData.originalThought;
+    }, [resultData]);
+
+    if (!isMounted || !resultData) return null;
 
     const handleCopy = async () => {
-        const text = `Original Thought:\n${originalThought}\n\nImproved Thought:\n${mockResult.improvedThought}`;
+        const text = `Original Thought:\n${originalThought}\n\nImproved Thought:\n${resultData.improvedThought}`;
         await navigator.clipboard.writeText(text);
     };
 
-    const highestBias = [...mockResult.biases].sort((a, b) => b.score - a.score)[0];
-    const largestDrop = [...mockResult.improvement].sort(
+    const highestBias = [...resultData.biases].sort((a, b) => b.score - a.score)[0];
+    const largestDrop = [...resultData.improvement].sort(
         (a, b) => b.before - b.after - (a.before - a.after)
     )[0];
     const avgReduction = Math.round(
-        mockResult.improvement.reduce((acc, item) => acc + (item.before - item.after), 0) /
-        mockResult.improvement.length
+        resultData.improvement.reduce((acc, item) => acc + (item.before - item.after), 0) /
+        resultData.improvement.length
     );
 
     return (
@@ -444,7 +483,7 @@ export default function ResultsPage() {
                     />
 
                     <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-4">
-                        {mockResult.biases.map((bias, index) => (
+                        {resultData.biases.map((bias, index) => (
                             <motion.div
                                 key={bias.name}
                                 initial={{ opacity: 0, y: 18 }}
@@ -454,7 +493,7 @@ export default function ResultsPage() {
                                 <BiasMiniCard
                                     name={bias.name}
                                     score={bias.score}
-                                    highlighted={bias.name === highestBias.name}
+                                    highlighted={highestBias && bias.name === highestBias.name}
                                 />
                             </motion.div>
                         ))}
@@ -477,7 +516,7 @@ export default function ResultsPage() {
                                 <ReasoningColumn
                                     title="Facts"
                                     icon={<CheckCircle2 className="h-5 w-5 text-cyan-300" />}
-                                    items={mockResult.arguments.facts}
+                                    items={resultData.arguments.facts}
                                     accent="border-cyan-400/20 bg-cyan-500/10 text-cyan-300"
                                 />
                             </div>
@@ -486,7 +525,7 @@ export default function ResultsPage() {
                                 <ReasoningColumn
                                     title="Assumptions"
                                     icon={<AlertTriangle className="h-5 w-5 text-amber-300" />}
-                                    items={mockResult.arguments.assumptions}
+                                    items={resultData.arguments.assumptions}
                                     accent="border-amber-400/20 bg-amber-500/10 text-amber-300"
                                 />
                             </div>
@@ -495,7 +534,7 @@ export default function ResultsPage() {
                                 <ReasoningColumn
                                     title="Conclusion"
                                     icon={<Flag className="h-5 w-5 text-violet-300" />}
-                                    description={mockResult.arguments.conclusion}
+                                    description={resultData.arguments.conclusion}
                                     accent="border-violet-400/20 bg-violet-500/10 text-violet-300"
                                 />
                             </div>
@@ -518,7 +557,7 @@ export default function ResultsPage() {
                             title="Devil’s Advocate"
                             subtitle="Questions your certainty and challenges weak assumptions."
                             icon={<ShieldAlert className="h-5 w-5 text-orange-300" />}
-                            points={mockResult.firewall.devil}
+                            points={resultData.firewall.devil}
                             className="border-orange-400/18 bg-gradient-to-br from-orange-500/8 via-transparent to-red-500/5 shadow-[0_0_30px_rgba(249,115,22,0.12)]"
                             iconClassName="border-orange-400/20 bg-orange-500/10"
                             dotClassName="bg-orange-400"
@@ -528,7 +567,7 @@ export default function ResultsPage() {
                             title="Statistician"
                             subtitle="Looks for evidence, probability, and measurable patterns."
                             icon={<BarChart3 className="h-5 w-5 text-cyan-300" />}
-                            points={mockResult.firewall.statistician}
+                            points={resultData.firewall.statistician}
                             className="border-cyan-400/18 bg-gradient-to-br from-cyan-500/8 via-transparent to-blue-500/5 shadow-[0_0_30px_rgba(34,211,238,0.12)]"
                             iconClassName="border-cyan-400/20 bg-cyan-500/10"
                             dotClassName="bg-cyan-400"
@@ -538,7 +577,7 @@ export default function ResultsPage() {
                             title="Judge"
                             subtitle="Balances perspectives and moves toward a fair conclusion."
                             icon={<Scale className="h-5 w-5 text-violet-300" />}
-                            points={mockResult.firewall.judge}
+                            points={resultData.firewall.judge}
                             className="border-violet-400/18 bg-gradient-to-br from-violet-500/8 via-transparent to-fuchsia-500/5 shadow-[0_0_30px_rgba(139,92,246,0.12)]"
                             iconClassName="border-violet-400/20 bg-violet-500/10"
                             dotClassName="bg-violet-400"
@@ -568,7 +607,7 @@ export default function ResultsPage() {
                             <div className="grid gap-8 md:grid-cols-[1fr_180px] md:items-start">
                                 <div>
                                     <p className="text-lg leading-8 text-slate-100 md:text-xl md:leading-9">
-                                        {mockResult.improvedThought}
+                                        {resultData.improvedThought}
                                     </p>
 
                                     <div className="mt-6 flex flex-col gap-3 sm:flex-row">
@@ -624,9 +663,11 @@ export default function ResultsPage() {
                     />
 
                     <div className="flex flex-wrap gap-3">
-                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-slate-200">
-                            Largest drop: <span className="font-semibold text-white">{largestDrop.name}</span>
-                        </span>
+                        {largestDrop && (
+                            <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-slate-200">
+                                Largest drop: <span className="font-semibold text-white">{largestDrop.name}</span>
+                            </span>
+                        )}
                         <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-slate-200">
                             Average reduction: <span className="font-semibold text-white">{avgReduction}%</span>
                         </span>
@@ -635,7 +676,7 @@ export default function ResultsPage() {
                         </span>
                     </div>
 
-                    <ChartCard data={mockResult.improvement} />
+                    <ChartCard data={resultData.improvement} />
                 </section>
             </div>
         </PageContainer>
