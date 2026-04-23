@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from services.preprocessing_service import run_preprocessing_pipeline
 from services.bias_detector import run_bias_detection
 from services.bias_detector_llm import run_bias_detection_llm
+from services.argument_extraction import run_argument_extraction
 
 router = APIRouter()
 
@@ -15,6 +16,7 @@ def analyze_decision(data: dict):
 
     try:
         preprocessing_output = run_preprocessing_pipeline(decision_text)
+
         heuristic_output = run_bias_detection(preprocessing_output)
 
         llm_output = run_bias_detection_llm(
@@ -23,21 +25,32 @@ def analyze_decision(data: dict):
             heuristic_output=heuristic_output
         )
 
+        argument_extraction = run_argument_extraction(
+            original_text=decision_text,
+            preprocessing_output=preprocessing_output,
+            heuristic_output=heuristic_output,
+            llm_bias_output=llm_output
+        )
+
         print("\n--- Preprocessing ---")
         print(preprocessing_output)
 
         print("\n--- Heuristic Bias ---")
         print(heuristic_output)
 
-        print("\n--- Gemini LLM Bias ---")
+        print("\n--- LLM Bias ---")
         print(llm_output)
+
+        print("\n--- Argument Extraction ---")
+        print(argument_extraction)
 
         return {
             "status": "success",
             "original_input": decision_text,
             "preprocessing": preprocessing_output,
             "heuristic_bias_analysis": heuristic_output,
-            "llm_bias_analysis": llm_output
+            "llm_bias_analysis": llm_output,
+            "argument_extraction": argument_extraction
         }
 
     except Exception as e:
