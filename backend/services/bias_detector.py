@@ -1,4 +1,5 @@
 import re
+from typing import Dict, List, Tuple
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 sentiment_analyzer = SentimentIntensityAnalyzer()
@@ -30,7 +31,12 @@ class BiasHeuristicDetector:
             r"\bmy senior told me\b": 0.35,
             r"\bfriends suggested\b": 0.25,
             r"\bpeople recommend\b": 0.20,
-            r"\bmost students choose\b": 0.30,
+            r"\bmost students (choose|are choosing|chose)\b": 0.35,
+            r"\beveryone around me\b": 0.35,
+            r"\bpeople around me\b": 0.25,
+            r"\ball my friends\b": 0.25,
+            r"\bothers are choosing\b": 0.20,
+            r"\beveryone is choosing\b": 0.35,
         }
 
         # Confirmation bias / selective certainty / already-decided language
@@ -39,11 +45,13 @@ class BiasHeuristicDetector:
             r"\bthis confirms\b": 0.35,
             r"\bi was right\b": 0.30,
             r"\bi already believed\b": 0.35,
+            r"\bi already knew\b": 0.30,
             r"\bobviously\b": 0.20,
             r"\bclearly\b": 0.20,
             r"\bi am sure\b": 0.25,
             r"\bi know for sure\b": 0.30,
             r"\bdefinitely\b": 0.20,
+            r"\bthis shows i was right\b": 0.35,
         }
 
         # Anchoring bias / first-impression persistence
@@ -57,6 +65,7 @@ class BiasHeuristicDetector:
             r"\bhaven't changed\b": 0.30,
             r"\bsince the beginning\b": 0.25,
             r"\bsince day one\b": 0.30,
+            r"\bi still believe what i first thought\b": 0.40,
         }
 
         # Availability bias / anecdotal, vivid, one-example reasoning
@@ -70,7 +79,10 @@ class BiasHeuristicDetector:
             r"\bbased on one\b": 0.35,
             r"\bone example\b": 0.35,
             r"\bone case\b": 0.30,
-            r"\bI had one experience\b": 0.30,
+            r"\bi had one experience\b": 0.30,
+            r"\bmy friend failed\b": 0.30,
+            r"\bonce so i think\b": 0.30,
+            r"\bso i think it is a bad field\b": 0.20,
         }
 
         # Absolutist / black-and-white / exaggerated certainty signals
@@ -87,27 +99,45 @@ class BiasHeuristicDetector:
             r"\bworst\b": 0.20,
             r"\bonly option\b": 0.25,
             r"\bno other choice\b": 0.30,
+            r"\bthe right choice\b": 0.15,
         }
 
         # Balance / nuance markers
+        # IMPORTANT: "maybe" removed because it often means uncertainty, not balance.
         self.balance_markers = [
-            "but", "however", "although", "on the other hand",
-            "at the same time", "it depends", "maybe", "might"
+            "but",
+            "however",
+            "although",
+            "on the other hand",
+            "at the same time",
+            "it depends",
         ]
 
         # Extra certainty markers
         self.certainty_markers = [
-            "definitely", "clearly", "for sure", "certainly", "obviously"
+            "definitely",
+            "clearly",
+            "for sure",
+            "certainly",
+            "obviously",
+            "i am sure",
+            "i know for sure",
+        ]
+
+        # Soft social decision phrases
+        self.social_action_markers = [
+            "should also go for it",
+            "should too",
+            "so i should",
+            "i should also",
+            "i should go for it",
         ]
 
     # ---------------- UTILS ---------------- #
 
-    def match_weighted_patterns(self, pattern_dict, text):
-        """
-        Returns:
-            hits: list of matched pattern strings
-            total_score: sum of weights of matched patterns
-        """
+    def match_weighted_patterns(
+        self, pattern_dict: Dict[str, float], text: str
+    ) -> Tuple[List[str], float]:
         hits = []
         total_score = 0.0
 
@@ -118,33 +148,33 @@ class BiasHeuristicDetector:
 
         return hits, total_score
 
-    def has_any_phrase(self, phrases, text):
+    def has_any_phrase(self, phrases: List[str], text: str) -> bool:
         text_lower = text.lower()
         return any(p in text_lower for p in phrases)
 
-    def clamp_scores(self, scores):
+    def clamp_scores(self, scores: Dict[str, float]) -> Dict[str, float]:
         for key in scores:
             scores[key] = max(0.0, min(1.0, round(scores[key], 2)))
         return scores
 
     # ---------------- MAIN ANALYSIS ---------------- #
 
-    def analyze(self, text):
+    def analyze(self, text: str) -> Dict:
         if not text or not text.strip():
             return {
                 "bias_scores": {
                     "confirmation_bias": 0.0,
                     "anchoring_bias": 0.0,
                     "social_influence_bias": 0.0,
-                    "availability_bias": 0.0
+                    "availability_bias": 0.0,
                 },
                 "bias_predictions": [],
                 "sentiment": sentiment_analyzer.polarity_scores(""),
                 "meta_signals": {
                     "absolute_language_score": 0.0,
                     "balance_present": False,
-                    "certainty_present": False
-                }
+                    "certainty_present": False,
+                },
             }
 
         text_lower = text.lower().strip()
@@ -153,14 +183,14 @@ class BiasHeuristicDetector:
             "confirmation_bias": 0.0,
             "anchoring_bias": 0.0,
             "social_influence_bias": 0.0,
-            "availability_bias": 0.0
+            "availability_bias": 0.0,
         }
 
         triggers = {
             "confirmation_bias": [],
             "anchoring_bias": [],
             "social_influence_bias": [],
-            "availability_bias": []
+            "availability_bias": [],
         }
 
         # ---------------- PATTERN MATCHES ---------------- #
@@ -184,11 +214,10 @@ class BiasHeuristicDetector:
 
         # ---------------- STRUCTURAL RULES ---------------- #
 
-        # Because alone does not imply confirmation bias.
-        # Only use it as a mild support signal when combined with stronger cues.
+        # "because" only supports bias if paired with other evidence
         if "because" in text_lower:
             if confirm_hits or absolute_hits:
-                scores["confirmation_bias"] += 0.10
+                scores["confirmation_bias"] += 0.08
                 triggers["confirmation_bias"].append("because + certainty/absolute framing")
 
             if social_hits:
@@ -200,14 +229,23 @@ class BiasHeuristicDetector:
             scores["anchoring_bias"] += 0.20
             triggers["anchoring_bias"].append("first + still")
 
-        if ("initially" in text_lower or "at first" in text_lower) and ("still" in text_lower or "haven't changed" in text_lower):
+        if ("initially" in text_lower or "at first" in text_lower) and (
+            "still" in text_lower or "haven't changed" in text_lower
+        ):
             scores["anchoring_bias"] += 0.20
             triggers["anchoring_bias"].append("initial position retained")
 
-        # ---------------- ABSOLUTE LANGUAGE AS AMPLIFIER ---------------- #
+        # ---------------- SOCIAL DECISION LOGIC ---------------- #
 
-        # Absolute language is treated as a supporting signal, not a direct bias category.
-        # It strengthens biases that already have some evidence.
+        if self.has_any_phrase(self.social_action_markers, text_lower):
+            if social_hits:
+                scores["social_influence_bias"] += 0.22
+                triggers["social_influence_bias"].append("social signal + follow-the-group decision")
+            else:
+                scores["social_influence_bias"] += 0.15
+                triggers["social_influence_bias"].append("follow-the-group decision language")
+
+        # ---------------- ABSOLUTE LANGUAGE AS AMPLIFIER ---------------- #
 
         if absolute_hits:
             if social_hits:
@@ -222,10 +260,9 @@ class BiasHeuristicDetector:
                 scores["availability_bias"] += min(0.15, absolute_score * 0.3)
                 triggers["availability_bias"].append("absolute language + anecdotal signal")
 
-            # If there are no direct category hits, do not strongly invent a bias.
-            # But weakly support confirmation due to over-certain framing.
+            # Keep this weak so unsupported strong opinions do not become false confirmation too easily
             if not (social_hits or confirm_hits or anchor_hits or avail_hits):
-                scores["confirmation_bias"] += min(0.15, absolute_score * 0.4)
+                scores["confirmation_bias"] += min(0.10, absolute_score * 0.25)
                 triggers["confirmation_bias"].append("absolute language only")
 
         # ---------------- SOCIAL COMBINATION RULES ---------------- #
@@ -242,11 +279,11 @@ class BiasHeuristicDetector:
 
         sentiment = sentiment_analyzer.polarity_scores(text)
 
-        # Strong emotional polarity slightly boosts existing active scores only
+        # Only boost already meaningful evidence, not tiny noise
         if abs(sentiment["compound"]) > 0.6:
             for bias in scores:
-                if scores[bias] > 0:
-                    scores[bias] += 0.08
+                if scores[bias] >= 0.25:
+                    scores[bias] += 0.06
                     triggers[bias].append("strong sentiment")
 
         # ---------------- CERTAINTY BOOST ---------------- #
@@ -254,7 +291,7 @@ class BiasHeuristicDetector:
         certainty_present = self.has_any_phrase(self.certainty_markers, text_lower)
         if certainty_present:
             for bias in scores:
-                if scores[bias] > 0:
+                if scores[bias] >= 0.20:
                     scores[bias] += 0.08
                     triggers[bias].append("certainty language")
 
@@ -274,16 +311,18 @@ class BiasHeuristicDetector:
         # ---------------- OUTPUT ---------------- #
 
         predictions = []
-        threshold = 0.25
+        threshold = 0.20
 
         for bias, score in scores.items():
             if score >= threshold:
                 related_triggers = sorted(set(triggers[bias]))
-                predictions.append({
-                    "bias_type": bias,
-                    "score": score,
-                    "triggers": related_triggers
-                })
+                predictions.append(
+                    {
+                        "bias_type": bias,
+                        "score": score,
+                        "triggers": related_triggers,
+                    }
+                )
 
         predictions.sort(key=lambda x: x["score"], reverse=True)
 
@@ -294,8 +333,8 @@ class BiasHeuristicDetector:
             "meta_signals": {
                 "absolute_language_score": round(min(absolute_score, 1.0), 2),
                 "balance_present": balance_present,
-                "certainty_present": certainty_present
-            }
+                "certainty_present": certainty_present,
+            },
         }
 
 
@@ -305,7 +344,6 @@ def run_bias_detection(preprocessing_output):
     return detector.analyze(normalized_text)
 
 
-# ---------------- TEST ---------------- #
 if __name__ == "__main__":
     detector = BiasHeuristicDetector()
 
@@ -314,7 +352,10 @@ if __name__ == "__main__":
         "my senior told me data science is the only option",
         "at first I thought AI was better and I still think so",
         "my friend failed once so this proves the field is useless",
-        "I chose this because it fits my interests and placement data looks good"
+        "I chose this because it fits my interests and placement data looks good",
+        "Most students are choosing AI so I should also go for it",
+        "I feel like everyone around me is choosing AI so maybe I should too",
+        "People say AI is good, but I will still decide based on my interests",
     ]
 
     for text in samples:

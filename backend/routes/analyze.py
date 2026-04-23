@@ -1,29 +1,44 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from services.preprocessing_service import run_preprocessing_pipeline
 from services.bias_detector import run_bias_detection
+from services.bias_detector_llm import run_bias_detection_llm
 
 router = APIRouter()
 
+
 @router.post("/analyze-decision")
 def analyze_decision(data: dict):
-
     decision_text = data.get("decision_text")
 
     if not decision_text:
-        return {"error": "decision_text is required"}
+        raise HTTPException(status_code=400, detail="decision_text is required")
 
-    preprocessing_output = run_preprocessing_pipeline(decision_text)
+    try:
+        preprocessing_output = run_preprocessing_pipeline(decision_text)
+        heuristic_output = run_bias_detection(preprocessing_output)
 
-    bias_output = run_bias_detection(preprocessing_output)
+        llm_output = run_bias_detection_llm(
+            original_text=decision_text,
+            preprocessing_output=preprocessing_output,
+            heuristic_output=heuristic_output
+        )
 
-    print("\n--- Preprocessing ---")
-    print(preprocessing_output)
+        print("\n--- Preprocessing ---")
+        print(preprocessing_output)
 
-    print("\n--- Bias Output ---")
-    print(bias_output)
+        print("\n--- Heuristic Bias ---")
+        print(heuristic_output)
 
-    return {
-        "status": "success",
-        "original_input": decision_text,
-        "bias_analysis": bias_output
-    }
+        print("\n--- Gemini LLM Bias ---")
+        print(llm_output)
+
+        return {
+            "status": "success",
+            "original_input": decision_text,
+            "preprocessing": preprocessing_output,
+            "heuristic_bias_analysis": heuristic_output,
+            "llm_bias_analysis": llm_output
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
