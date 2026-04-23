@@ -224,3 +224,28 @@ if __name__ == "__main__":
     result = run_argument_extraction(sample_text)
 
     print(json.dumps(result, indent=2))
+
+def fallback_argument_extraction(preprocessing_output):
+    segments = preprocessing_output.get("segments", [])
+    normalized_text = preprocessing_output.get("normalized_text", "")
+
+    decision_claim = ""
+    supporting_reasons = []
+
+    for segment in segments:
+        if segment.get("type") == "decision_claim":
+            decision_claim = segment.get("text", "")
+        elif segment.get("type") == "supporting_reason":
+            supporting_reasons.append(segment.get("text", ""))
+
+    assumptions = supporting_reasons if supporting_reasons else []
+    conclusion = decision_claim if decision_claim else normalized_text
+
+    return {
+        "status": "fallback_rule_based",
+        "facts": [],
+        "assumptions": assumptions,
+        "conclusion": conclusion,
+        "reasoning_summary": "Fallback rule-based extraction used because LLM extraction failed.",
+        "raw_output": ""
+    }

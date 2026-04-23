@@ -3,6 +3,7 @@ from services.preprocessing_service import run_preprocessing_pipeline
 from services.bias_detector import run_bias_detection
 from services.bias_detector_llm import run_bias_detection_llm
 from services.argument_extraction import run_argument_extraction
+from services.cognitive_firewall_service import run_cognitive_firewall
 
 router = APIRouter()
 
@@ -32,6 +33,16 @@ def analyze_decision(data: dict):
             llm_bias_output=llm_output
         )
 
+        agent_input = {
+            "decision_text": decision_text,
+            "preprocessing_output": preprocessing_output,
+            "heuristic_bias_analysis": heuristic_output,
+            "llm_bias_analysis": llm_output,
+            "argument_extraction": argument_extraction
+        }
+
+        cognitive_firewall_output = run_cognitive_firewall(agent_input)
+
         print("\n--- Preprocessing ---")
         print(preprocessing_output)
 
@@ -44,13 +55,17 @@ def analyze_decision(data: dict):
         print("\n--- Argument Extraction ---")
         print(argument_extraction)
 
+        print("\n--- Cognitive Firewall ---")
+        print(cognitive_firewall_output)
+
         return {
             "status": "success",
             "original_input": decision_text,
             "preprocessing": preprocessing_output,
             "heuristic_bias_analysis": heuristic_output,
             "llm_bias_analysis": llm_output,
-            "argument_extraction": argument_extraction
+            "argument_extraction": argument_extraction,
+            "cognitive_firewall": cognitive_firewall_output
         }
 
     except Exception as e:
